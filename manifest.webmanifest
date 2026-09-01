@@ -1,0 +1,17 @@
+{
+  "name": "Assistente Personale",
+  "short_name": "Assistente",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b0b0d",
+  "theme_color": "#111111",
+  "lang": "it",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
