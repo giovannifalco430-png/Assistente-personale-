@@ -36,15 +36,15 @@ dialog{width:min(92vw,520px);background:#17171a;color:white;border:1px solid #33
 
 <dialog id="settingsDialog"><div class="modal">
 <h2>Impostazioni</h2>
-<label>Chiave API xAI</label>
-<input id="apiKey" type="password" placeholder="xai-…">
-<p class="hint">Per questa versione PWA la chiave viene salvata solo nel browser dell'iPhone. È comodo per uso personale, ma una web app non può offrire la stessa protezione del Keychain di un'app nativa.</p>
+<label>Chiave API Gemini</label>
+<input id="apiKey" type="password" placeholder="AIza…">
+<p class="hint">Per questa versione PWA la chiave viene salvata solo nel browser del dispositivo. È comodo per uso personale, ma una web app non può offrire la stessa protezione del Keychain di un'app nativa.</p>
 <div class="actions"><button class="secondary" id="clearKey">Rimuovi</button><button class="secondary" id="closeSettings">Chiudi</button><button class="send" id="saveKey">Salva</button></div>
 </div></dialog>
 
 <script>
 const $=id=>document.getElementById(id);
-const keyStore='assistente_xai_key';
+const keyStore='assistente_gemini_key';
 let messages=[];
 
 function add(role,text){
@@ -58,11 +58,11 @@ function addCard(node){const c=document.createElement('div');c.className='card';
 function scroll(){window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})}
 function key(){return localStorage.getItem(keyStore)||''}
 function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+key()}}
-function requireKey(){if(!key()){$('settingsDialog').showModal();throw new Error('Inserisci prima la chiave API xAI.')}}
+function requireKey(){if(!key()){$('settingsDialog').showModal();throw new Error('Inserisci prima la chiave API Gemini.')}}
 
 async function api(path,body){
   requireKey();
-  const r=await fetch('https://api.x.ai/v1/'+path,{method:'POST',headers:headers(),body:JSON.stringify(body)});
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/openai/'+path,{method:'POST',headers:headers(),body:JSON.stringify(body)});
   const t=await r.text(); let j; try{j=JSON.parse(t)}catch{j=null}
   if(!r.ok) throw new Error(j?.error?.message||t||('HTTP '+r.status));
   return j;
@@ -74,29 +74,42 @@ async function chat(){
     const lower=p.toLowerCase();
     if(/^(immagine|image|genera un'immagine|crea un'immagine)/.test(lower)){
       const prompt=p.replace(/^(immagine|image|genera un'immagine|crea un'immagine)\s*:?\s*/i,'');
-      const j=await api('images/generations',{model:'grok-imagine-image',prompt,n:1});
+      const j=await api('images/generations',{model:'gemini-2.5-flash-image',prompt,n:1});
       const d=j.data?.[0]; const img=document.createElement('img'); img.alt=prompt;
       if(d?.url) img.src=d.url; else if(d?.b64_json) img.src='data:image/png;base64,'+d.b64_json; else throw Error('Nessuna immagine ricevuta');
       addCard(img);
     }else if(/^(video|genera un video|crea un video)/.test(lower)){
       const prompt=p.replace(/^(video|genera un video|crea un video)\s*:?\s*/i,'');
       add('assistant','Avvio la generazione del video. Potrebbe richiedere qualche minuto.');
-      const j=await api('videos/generations',{model:'grok-imagine-video-1.5',prompt,duration:8,aspect_ratio:'9:16',resolution:'720p'});
-      const id=j.request_id||j.id;
-      if(!id) throw Error('La risposta non contiene l’identificativo del video.');
+      const r0=await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning',{
+        method:'POST',headers:headers(),body:JSON.stringify({
+          instances:[{prompt}],
+          parameters:{aspectRatio:'9:16',resolution:'720p',durationSeconds:8,numberOfVideos:1}
+        })
+      });
+      const t0=await r0.text(); let j; try{j=JSON.parse(t0)}catch{j=null}
+      if(!r0.ok) throw Error(j?.error?.message||t0||('HTTP '+r0.status));
+      const operation=j?.name;
+      if(!operation) throw Error('La risposta non contiene l’identificativo dell’operazione.');
       let done=null;
       for(let i=0;i<60;i++){
-        await new Promise(r=>setTimeout(r,5000));
-        const r=await fetch('https://api.x.ai/v1/videos/'+encodeURIComponent(id),{headers:{'Authorization':'Bearer '+key()}});
+        await new Promise(r=>setTimeout(r,10000));
+        const r=await fetch('https://generativelanguage.googleapis.com/v1beta/'+operation,{headers:{'x-goog-api-key':key()}});
         const s=await r.json();
-        if(s.status==='done'){done=s;break}
-        if(s.status==='failed'||s.status==='expired') throw Error('Generazione video fallita.');
-        $('status').textContent='Video in generazione… '+(i+1)*5+'s';
+        if(s.done){
+          if(s.error) throw Error(s.error.message||'Generazione video fallita.');
+          done=s;break
+        }
+        $('status').textContent='Video in generazione… '+(i+1)*10+'s';
       }
-      const url=done?.video?.url||done?.url; if(!url) throw Error('Video non disponibile.');
-      const v=document.createElement('video');v.controls=true;v.playsInline=true;v.src=url;addCard(v);
+      const url=done?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+      if(!url) throw Error('Video non disponibile.');
+      const vr=await fetch(url,{headers:{'x-goog-api-key':key()}});
+      if(!vr.ok) throw Error('Impossibile recuperare il video.');
+      const blob=await vr.blob();
+      const v=document.createElement('video');v.controls=true;v.playsInline=true;v.src=URL.createObjectURL(blob);addCard(v);
     }else{
-      const j=await api('chat/completions',{model:'grok-4',messages});
+      const j=await api('chat/completions',{model:'gemini-3.7-flash',messages});
       const answer=j.choices?.[0]?.message?.content||'Nessuna risposta.';
       add('assistant',answer);
     }
